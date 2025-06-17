@@ -22,9 +22,9 @@ A simple multi-instance launcher for ClassiCube, inspired by MultiMC, and made i
 	- 🟩 Deleting Instances
 	- 🟥 Editing Instances
 	- 🟥 Plugin Manager
-	- 🟥 Multiple Instances Running
-  		- 🟥 Stop Button
-  		- 🟥 Management of Multiple Instances
+	- 🟩 Multiple Instances Running
+  		- 🟩 Stop Button
+  		- 🟩 Management of Multiple Instances
 	- 🟥 Custom Clients
 - 🟨 Misc
 	- 🟩 Windows, Mac, Linux, and 32bit Support
@@ -36,6 +36,6 @@ A simple multi-instance launcher for ClassiCube, inspired by MultiMC, and made i
  		- 🟩 Adding Accounts
 		- 🟩 Deleting Accounts
   		- 🟩 Windows Encryption
-  		- 🟥 Unix Encryption P.S. Being worked on by [TomCube](https://github.com/yomcube) (I may not add it as it will be Quite difficult. It's XTEA encryption with machine and OS specific key. OG code [here](https://github.com/ClassiCube/ClassiCube/blob/6d5a5b78c8b8e99d5bb4f557b8caafd9d5bb8a5b/src/Platform_Posix.c#L1382). It was deliberately designed so passwords could not be transferred between devices or easily accessed by other apps. If you are willing, you can make it yourself.)
+  		- 🟥 Unix Encryption (I may not add it as it will be Quite difficult. It's XTEA encryption with machine and OS specific key. OG code [here](https://github.com/ClassiCube/ClassiCube/blob/6d5a5b78c8b8e99d5bb4f557b8caafd9d5bb8a5b/src/Platform_Posix.c#L1382). It was deliberately designed so passwords could not be transferred between devices or easily accessed by other apps. If you are willing, you can make it yourself.)
 	- 🟥 Settings
 	- 🟥 Themes

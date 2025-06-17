@@ -7,6 +7,8 @@ import sys
 import tkinter as tk
 from tkinter import ttk
 import shutil
+import threading
+import time
 
 from PIL import Image, ImageTk
 
@@ -21,6 +23,9 @@ class Gui:
         self.root.title("LaunchiCube")
         self.root.geometry("1200x750")
         self.root.configure(bg="#2C2F33")
+        self.game_threads = {}
+        self.game_processes = {}
+        self.game_stop_flags = {}
 
         self.load_accounts()
         
@@ -44,18 +49,7 @@ class Gui:
 
         self.right_frame = tk.Frame(root, bg="#3C3F41", width=250)
         self.right_frame.pack_propagate(False)
-        self.right_frame.pack(fill="y", side="right")
-
-        self.right_logo_label = tk.Label(self.right_frame, bg="#3C3F41")
-        self.right_name_label = tk.Label(self.right_frame, bg="#3C3F41", fg="white", font=("Arial", 14, "bold"))
-        self.play_button = tk.Button(
-            self.right_frame, text="Play", bg="#4CAF50", fg="white", font=("Arial", 12, "bold"),
-            command=lambda: self.start_game(self.selected_instance), state="disabled"
-        )
-        self.delete_button = tk.Button(
-            self.right_frame, text="Delete", bg="#AF4C50", fg="white", font=("Arial", 12, "bold"),
-            command=lambda: self.delete_instance(self.selected_instance), state="disabled"
-        )                                     
+        self.right_frame.pack(fill="y", side="right")                                    
 
         self.main_frame = tk.Frame(root, bg="#23272A")
         self.main_frame.pack(expand=True, fill="both")
@@ -106,43 +100,105 @@ class Gui:
         subprocess.Popen([sys.executable, "main.py"]) # pylint: disable=consider-using-with
         sys.exit()
 
-    def select_instance(self, instance):
-        self.play_button["state"] = "normal"
-        self.play_button.config(command=lambda: self.start_game(instance))
-        self.delete_button["state"] = "normal"
-        self.delete_button.config(command=lambda: self.delete_instance(instance))
+    def start_game_thread(self, instance):
+        instance_key = instance["dir"]
+        self.game_stop_flags[instance_key] = threading.Event()
+        thread = threading.Thread(target=self.start_game, args=(instance, self.game_stop_flags[instance_key]))
+        self.game_threads[instance_key] = thread
+        thread.start()
+        
+    def check_threads(self):
+        ended_threads = []
+        for name, thread in list(self.game_threads.items()):
+            if not thread.is_alive():
+                ended_threads.append(name)
+        for name in ended_threads:
+            if name in self.game_processes:
+                del self.game_processes[name]
+            if name in self.game_stop_flags:
+                del self.game_stop_flags[name]
+            del self.game_threads[name]
+        
+    def instance_running(self, instance):
+        self.check_threads()
+        return instance['dir'] in self.game_threads
+        
+    def kill_game(self, instance):
+        instance_key = instance['dir']
+        if instance_key in self.game_stop_flags:
+            print(f"Signaling stop for {instance_key}")
+            self.game_stop_flags[instance_key].set()
+            self.root.after(100, lambda: self.update_right_bar(self.selected_instance))
+        else:
+            print(f"No stop flag found for {instance_key}, instance might not be running or already terminated.")
+            self.update_right_bar(self.selected_instance)
 
-    def start_game(self, instance):
-        if instance:
-            print(f"Starting game for: {instance['name']}")
-            accounts_json = json.loads(utils.load_file("accounts.json"))
-            instancedir = instance['dir']
-            
-            if not accounts_json["Selected Account"] is None:
-                selected_account_pass = None
-                for acc in accounts_json["accounts"]:
-                    if acc["name"] == accounts_json["Selected Account"]:
-                        selected_account_pass = acc["password"]
-                
-                utils.change_option(instancedir, "launcher-cc-username", accounts_json["Selected Account"])
-                utils.change_option(instancedir, "launcher-dc-username", accounts_json["Selected Account"])
-                utils.change_option(instancedir, "launcher-cc-password", selected_account_pass)
-                
-                opts = ['session', 'server', 'ip', 'port', 'mppass', 'dc-mppass', 'username']
-                for o in opts:
-                    utils.delete_option(instancedir, f"launcher-{o}")
-            
-            ext = '.exe' if utils.PLAT_WIN else ''
-            quote = "" if utils.PLAT_WIN else "'"
-            pre = f'instances/{instancedir}/' if utils.PLAT_WIN else ''
-            execute_dir = f"{instance['ver']}{ext}"
-            
-            shutil.copy(f"clients/{execute_dir}", f"instances/{instance['dir']}/ClassiCube{ext}")
-            subprocess.run(
-                [f"{quote}{pre}ClassiCube{quote}"], cwd=f'instances/{instancedir}/',
-                shell=not utils.PLAT_WIN, check=False
+    def start_game(self, instance, stop_flag):
+        instance_key = instance['dir']
+        self.update_right_bar(instance)
+        print(f"Starting game for: {instance['name']}")
+        accounts_json = json.loads(utils.load_file("accounts.json"))
+        instancedir = instance['dir']
+
+        if not accounts_json["Selected Account"] is None:
+            selected_account_pass = None
+            for acc in accounts_json["accounts"]:
+                if acc["name"] == accounts_json["Selected Account"]:
+                    selected_account_pass = acc["password"]
+
+            utils.change_option(instancedir, "launcher-cc-username", accounts_json["Selected Account"])
+            utils.change_option(instancedir, "launcher-dc-username", accounts_json["Selected Account"])
+            utils.change_option(instancedir, "launcher-cc-password", selected_account_pass)
+
+            opts = ['session', 'server', 'ip', 'port', 'mppass', 'dc-mppass', 'username']
+            for o in opts:
+                utils.delete_option(instancedir, f"launcher-{o}")
+
+        ext = '.exe' if utils.PLAT_WIN else ''
+        quote = "" if utils.PLAT_WIN else "'"
+        pre = f'instances/{instancedir}/' if utils.PLAT_WIN else ''
+        execute_dir = f"{instance['ver']}{ext}"
+        target_path = f"instances/{instance['dir']}/ClassiCube{ext}"
+
+        shutil.copy(f"clients/{execute_dir}", target_path)
+
+        try:
+            process = subprocess.Popen(
+                [f"{quote}{pre}ClassiCube{quote}"],
+                cwd=f'instances/{instancedir}/',
+                shell=not utils.PLAT_WIN
             )
-            os.remove(f"instances/{instancedir}/ClassiCube{ext}") 
+            self.game_processes[instance_key] = process
+            
+            while process.poll() is None:
+                if stop_flag.is_set():
+                    print(f"Stop flag set for {instance_key}. Terminating process...")
+                    process.terminate()
+                    process.wait(timeout=5)
+                    if process.poll() is None:
+                        print(f"Process for {instance_key} did not terminate gracefully, killing it.")
+                        process.kill()
+                    break
+                    
+                time.sleep(0.1)
+
+            print(f"Game process for {instance_key} finished or was terminated.")
+
+        except Exception as e:
+            print(f"Error starting or running game for {instance_key}: {e}")
+        finally:
+            if os.path.exists(target_path):
+                try:
+                    os.remove(target_path)
+                    print(f"Removed temporary executable: {target_path}")
+                except OSError as e:
+                    print(f"Error removing temporary executable {target_path}: {e}")
+
+            self.root.after(0, lambda: self.update_right_bar(self.selected_instance))
+            if instance_key in self.game_processes:
+                del self.game_processes[instance_key]
+            if instance_key in self.game_stop_flags:
+                self.game_stop_flags[instance_key].clear()
 
     def update_right_bar(self, instance):
         for widget in self.right_frame.winfo_children():
@@ -165,9 +221,12 @@ class Gui:
         self.right_name_label = tk.Label(self.right_frame, text=instance["name"], bg="#3C3F41",
                                          fg="white", font=("Arial", 14, "bold"))
         self.right_name_label.pack(pady=10)
+        
+        running = self.instance_running(instance)
 
-        self.play_button = tk.Button(self.right_frame, text="Play", bg="#4CAF50", fg="white",
-                                     font=("Arial", 12, "bold"), command=lambda: self.start_game(instance))
+        self.play_button = tk.Button(self.right_frame, text="Kill" if running else "Play",
+                                     bg="#4CAF50", fg="white", font=("Arial", 12, "bold"),
+                                     command=lambda: self.start_game_thread(instance) if not running else self.kill_game(instance))
         self.play_button.pack(pady=10)
         self.delete_button = tk.Button(self.right_frame, text="Delete", bg="#AF4C50", fg="white",
                                      font=("Arial", 12, "bold"), command=lambda: self.delete_instance(instance))
@@ -242,12 +301,13 @@ class Gui:
                 self.images[opt] = ImageTk.PhotoImage(img.resize((30, 30), Image.Resampling.NEAREST))
     
     def delete_instance(self, instance):
-        instances = json.loads(utils.load_file("instances/index.json"))
-        instances.remove(instance)
-        utils.save_file("instances/index.json", json.dumps(instances))
-        shutil.rmtree(f"instances/{instance['dir']}/")
-        self.load_instances()
-        self.update_right_bar(instances[0])
+        if not self.instance_running(instance):
+            instances = json.loads(utils.load_file("instances/index.json"))
+            instances.remove(instance)
+            utils.save_file("instances/index.json", json.dumps(instances))
+            shutil.rmtree(f"instances/{instance['dir']}/")
+            self.load_instances()
+            self.update_right_bar(instances[0])
 
     def open_add_instance(self):
         add_window = tk.Toplevel(self.root)
